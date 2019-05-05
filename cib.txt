@@ -1,0 +1,62 @@
+property \
+    no-quorum-policy="ignore" \
+    stonith-enabled="false" \
+    crmd-transition-delay="0s"
+rsc_defaults \
+    resource-stickiness="INFINITY" \
+    migration-threshold="1"
+primitive vip-master ocf:heartbeat:IPaddr2 \
+    params ip="192.168.122.80" cidr_netmask="24" \
+    op start   timeout="60s" interval="0s"  on-fail="stop" \
+    op monitor timeout="60s" interval="10s" on-fail="restart" \
+    op stop    timeout="60s" interval="0s"  on-fail="block"
+primitive vip-rep ocf:heartbeat:IPaddr2 \
+    params ip="192.168.122.81" cidr_netmask="24" \
+    meta migration-threshold="0" \
+    op start   timeout="60s" interval="0s"  on-fail="restart" \
+    op monitor timeout="60s" interval="10s" on-fail="restart" \
+    op stop    timeout="60s" interval="0s"  on-fail="block"
+primitive vip-slave ocf:heartbeat:IPaddr2 \
+    params ip="192.168.122.82"  cidr_netmask="24" \
+    meta resource-stickiness="1" \
+    op start   timeout="60s" interval="0s"  on-fail="restart" \
+    op monitor timeout="60s" interval="10s" on-fail="restart" \
+    op stop    timeout="60s" interval="0s"  on-fail="block"
+primitive pgsql ocf:heartbeat:pgsql \
+   params \
+        pgctl="/usr/lib/postgresql/10/bin/pg_ctl" \
+        psql="/usr/lib/postgresql/10/bin/psql" \
+        pgdata="/var/lib/postgresql/10/main/" \
+        start_opt="-p 5432" \
+        config="/etc/postgresql/10/main/postgresql.conf" \
+        logfile="/var/log/postgresql/postgresql-10-main.log" \
+        rep_mode="sync" \
+        node_list="db1 db2" \
+        restore_command="test -f /srv/pg_archive/%f && cp /srv/pg_archive/%f %p" \
+        primary_conninfo_opt="keepalives_idle=60 keepalives_interval=5 keepalives_count=5" \
+        master_ip="192.168.122.81" \
+        restart_on_promote="true" \
+        stop_escalate="0" \
+    op start   interval="0s" timeout="60s" on-fail="restart" \
+    op monitor interval="4s" timeout="60s" on-fail="restart" \
+    op monitor interval="3s" timeout="60s" on-fail="restart" role="Master" \
+    op promote interval="0s" timeout="60s" on-fail="restart" \
+    op demote  interval="0s" timeout="60s" on-fail="stop" \
+    op stop    interval="0s" timeout="60s" on-fail="block" \
+    op notify  interval="0s" timeout="60s"
+ms msPostgresql pgsql \
+    meta master-max="1" master-node-max="1" clone-max="2" clone-node-max="1" notify="true" interleave="true" tar
+get-role="Started"
+group master-group vip-master vip-rep \
+      meta ordered="false"
+location rsc_location-1 vip-slave \
+    rule  200: pgsql-status eq "HS:sync" \
+    rule  100: pgsql-status eq "PRI" \
+    rule  -inf: not_defined pgsql-status \
+    rule  -inf: pgsql-status ne "HS:sync" and pgsql-status ne "PRI"
+location rsc_location-2 msPostgresql \
+    rule -inf: not_defined default_ping_set or default_ping_set lt 100
+colocation rsc_colocation-2 inf: master-group  msPostgresql:Master
+colocation rsc_colocation-3 inf: vip-slave     msPostgresql:Slave
+order rsc_order-2 0: msPostgresql:promote  master-group:start   sequential=true symmetrical=false
+order rsc_order-3 0: msPostgresql:demote   master-group:stop    sequential=true symmetrical=false

@@ -6,18 +6,18 @@ rsc_defaults \
     resource-stickiness="INFINITY" \
     migration-threshold="1"
 primitive vip-master ocf:heartbeat:IPaddr2 \
-    params ip="192.168.122.80" cidr_netmask="24" \
+    params ip="192.168.122.80" cidr_netmask="32" \
     op start   timeout="60s" interval="0s"  on-fail="stop" \
     op monitor timeout="60s" interval="10s" on-fail="restart" \
     op stop    timeout="60s" interval="0s"  on-fail="block"
 primitive vip-rep ocf:heartbeat:IPaddr2 \
-    params ip="192.168.122.81" cidr_netmask="24" \
+    params ip="192.168.122.81" cidr_netmask="32" \
     meta migration-threshold="0" \
     op start   timeout="60s" interval="0s"  on-fail="restart" \
     op monitor timeout="60s" interval="10s" on-fail="restart" \
     op stop    timeout="60s" interval="0s"  on-fail="block"
 primitive vip-slave ocf:heartbeat:IPaddr2 \
-    params ip="192.168.122.82"  cidr_netmask="24" \
+    params ip="192.168.122.82"  cidr_netmask="32" \
     meta resource-stickiness="1" \
     op start   timeout="60s" interval="0s"  on-fail="restart" \
     op monitor timeout="60s" interval="10s" on-fail="restart" \
